@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Informe E1 · Recetas y wearables</title>
+<style>
+  @page { size: A4; margin: 13mm 14mm 13mm 14mm; }
+  :root { --ink:#1d2329; --muted:#5b6670; --line:#c9d1d8; --soft:#f2f5f7; --acc:#1f5f8b;
+          --rel:#1f5f8b; --ts:#2f7d4f; --kv:#b5651d; }
+  * { box-sizing: border-box; }
+  body { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 9.7pt; line-height: 1.28;
+         color: var(--ink); margin: 0; background:#fff; }
+  header { border-bottom: 2px solid var(--acc); padding-bottom: 4px; margin-bottom: 6px; }
+  header .curso { font-size: 8.5pt; color: var(--muted); }
+  header h1 { font-size: 15pt; margin: 1px 0 1px; color: var(--acc); }
+  header .meta { font-size: 8.8pt; color: var(--muted); }
+  h2 { font-size: 11pt; color: var(--acc); margin: 8px 0 3px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 9.9pt; margin: 5px 0 2px; }
+  p { margin: 2px 0 4px; text-align: justify; }
+  ul { margin: 2px 0 4px; padding-left: 15px; }
+  li { margin: 1px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 8pt; line-height: 1.2; margin: 3px 0 5px; }
+  th, td { border: 1px solid var(--line); padding: 2px 4px; vertical-align: top; text-align: left; }
+  th { background: var(--soft); font-weight: 700; }
+  td.k { font-weight: 700; white-space: nowrap; }
+  code, .mono { font-family: Consolas, "Courier New", monospace; font-size: 8pt; }
+  .tag { display:inline-block; font-size:7.3pt; padding:0 4px; border-radius:3px; color:#fff; font-weight:700; }
+  .t-rel { background: var(--rel); } .t-ts { background: var(--ts); } .t-kv { background: var(--kv); }
+  .nota { font-size: 8pt; color: var(--muted); }
+  .anexo { page-break-before: always; }
+  .anexo h2 { margin-top: 0; }
+  pre { font-family: Consolas, "Courier New", monospace; font-size: 7.6pt; line-height: 1.22; background: var(--soft);
+        border: 1px solid var(--line); padding: 4px 6px; margin: 2px 0 4px; white-space: pre-wrap; }
+  .q { border: 1px solid var(--line); padding: 4px 6px; margin: 0 0 6px; page-break-inside: avoid; }
+  .q h3 { margin: 0 0 2px; }
+  .q .fila { font-size: 8.4pt; margin: 1px 0; }
+  .q .fila b { color: var(--acc); }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: Calibri, "Segoe UI", Arial, sans-serif; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="curso">INF3862 · Plataformas Big Data para Data Science · Magíster en Inteligencia Artificial UC · Proyecto del curso</div>
+  <h1>Entrega 1 · Diseño de datos: «¿Qué ceno hoy?»</h1>
+  <div class="meta">Integrantes: <b>Sebastián Muñoz</b> e <b>Ignacio Ferrada</b> · 16 de noviembre de 2026 ·
+    Repositorio: <span class="mono">github.com/iferrada-142006/inf3862-recetas-wearables</span></div>
+</header>
+
+<h2>1. Objetivo final del proyecto</h2>
+<p>Construiremos un <b>recomendador de cena</b> para los usuarios de la app que vincularon su reloj. Cada día, a las 17:30 hora local,
+la app propone cinco recetas del catálogo de Food.com que calzan con el <b>balance energético del día</b>: las calorías que el reloj
+registró como gastadas, menos las que el usuario ya consumió según las comidas que anotó. El tipo de actividad también cuenta
+(después de correr o de una sesión de fuerza se priorizan recetas con más proteína), igual que lo que el usuario cocinó y calificó bien antes.</p>
+<table>
+  <tr><th style="width:15%">Pregunta</th><th>Respuesta para nuestro caso</th></tr>
+  <tr><td class="k">1. Resultado</td><td>Recomendación «Tu cena de hoy» dentro de la app, para usuarios con reloj (300 hoy). Apoya una decisión cotidiana del usuario: <i>qué cocinar esta noche</i>. Al equipo de producto le permite medir si la recomendación se cocina. En la E3 entrenaremos un modelo base que estime las kcal que el usuario gastará en lo que queda del día, para ajustar la meta de la cena.</td></tr>
+  <tr><td class="k">2. Datos</td><td>Wearable: 15,5 M de mediciones (114 MB comprimidos, ~2 GB en JSON), 4.840 sesiones, 22.106 comidas y 315 relojes. Food.com: 522.517 recetas con información nutricional y 1,4 M de reseñas. El reloj envía lotes al sincronizar; comidas, reseñas y vinculaciones entran en línea desde la app; el catálogo se actualiza en batch.</td></tr>
+  <tr><td class="k">3. Operaciones</td><td>Unificar los dos formatos de reloj, quitar repetidos, atribuir cada medición al usuario vigente y pasar a su día local. Calcular gasto y consumo (kcal por porción × porciones) por usuario-día. Filtrar recetas por presupuesto calórico y proteína, y ordenarlas por rating y afinidad del usuario.</td></tr>
+  <tr><td class="k">4. Exigencias</td><td>La recomendación debe estar lista al abrir la app (&lt; 1 s), por lo que se precalcula. El dato de actividad puede atrasarse horas (mediana 80 min, 25 % llega con más de 3 h), así que aceptamos un balance aproximado (±15 %) y mostramos «datos hasta HH:MM». No toleramos contar dos veces una medición repetida (inflaría el gasto) ni recomendar una receta que no existe.</td></tr>
+  <tr><td class="k">5. Recursos</td><td>Equipo de dos personas y presupuesto acotado. El volumen actual cabe en una máquina, así que usaremos una base relacional gestionada, almacenamiento de objetos y un motor local (DuckDB) o un clúster pequeño. Costo esperado: decenas de USD al mes. Solo pasaríamos a procesamiento distribuido si la base de usuarios con reloj creciera dos órdenes de magnitud (lo analizaremos en la E2).</td></tr>
+</table>
+
+<h2>2. Fuentes y recepción de datos</h2>
+<table>
+  <tr><th style="width:9%">Fuente</th><th style="width:12%">Un registro es…</th><th style="width:9%">Tipo</th><th style="width:15%">Volumen entregado · crecimiento</th><th style="width:17%">Recepción · latencia aceptable</th><th>Problemas observados o esperados</th><th style="width:11%">Esquema</th></tr>
+  <tr><td class="k">mediciones</td><td>Una lectura del reloj: FC, pasos y kcal desde la lectura anterior (1 min Pulso S, 5 min FitBand 2, 10 s durante una sesión).</td><td>Semiestructurado (JSONL.gz)</td><td>15.540.132 filas, 114 MB gz, 61 días. ≈255 mil filas/día (≈810 por reloj) · ≈7,7 M filas y ≈57 MB gz/mes.</td><td>Eventos en lotes por sincronización (≈99 filas/lote), cargados en micro-batch horario. Latencia aceptable: 1 h.</td><td>Atraso: p50 80 min, 25 % &gt; 3 h, 2,6 % &gt; 24 h, máx. 108 h. 345.599 repetidas (2,2 %) por reintentos, con valores idénticos. FC nula en 357.927 (2,3 %). Dos esquemas: <span class="mono">device_id/dev</span>, ISO vs. epoch en ms, <span class="mono">frecuencia_cardiaca/fc</span>. 13 FC fuera de rango.</td><td><b>On-read</b> en crudo; esquema unificado al limpiar.</td></tr>
+  <tr><td class="k">sesiones</td><td>Una actividad (caminar, correr, bicicleta, fuerza) con inicio, fin, km y kcal.</td><td>Semiestructurado (JSONL)</td><td>4.840 filas, 764 KB · ≈80/día.</td><td>Evento al cerrar la sesión, en el mismo lote que las mediciones. 1 h.</td><td>48 sesiones duplicadas idénticas. Distancia nula en fuerza (válido). Se solapan con mediciones de 10 s, por lo que sus kcal no se suman al gasto del reloj.</td><td><b>On-read</b> en crudo.</td></tr>
+  <tr><td class="k">comidas</td><td>Una receta preparada por un usuario, con fecha y porciones.</td><td>Estructurado (CSV)</td><td>22.106 filas, 984 KB · ≈360/día.</td><td>Transacción en línea desde la app; al analítico por extracción incremental horaria.</td><td>48 <span class="mono">RecipeId</span> que no existen en el catálogo. 1.170 comidas anteriores a la vinculación del reloj (válidas, pero sin gasto con qué comparar).</td><td><b>On-write</b> (FK y CHECK).</td></tr>
+  <tr><td class="k">dispositivos</td><td>Un reloj vinculado a un usuario, con modelo, fechas y zona horaria.</td><td>Estructurado (CSV)</td><td>315 relojes de 300 usuarios · decenas/mes.</td><td>Transacción en línea al vincular. Inmediata.</td><td>Usuarios que cambiaron de reloj y 15 desvinculaciones: hay que atribuir cada medición al dueño vigente. Fechas en UTC con zona horaria del usuario.</td><td><b>On-write</b>.</td></tr>
+  <tr><td class="k">recetas</td><td>Una receta del catálogo con nutrición por porción, tiempos e ingredientes.</td><td>Estructurado con listas</td><td>522.517 filas, 171 MB Parquet (~700 MB CSV) · ≈70/día.</td><td>Carga batch diaria del catálogo.</td><td>Tiempos en ISO 8601 (<span class="mono">PT45M</span>). 2.615 recetas con más de 5.000 kcal por porción y 35 % sin porciones. <span class="mono">RecipeId</span> viene como decimal y en reseñas como entero.</td><td><b>On-write</b>.</td></tr>
+  <tr><td class="k">reseñas</td><td>Calificación (0–5) y texto de un usuario sobre una receta.</td><td>Estructurado + texto libre</td><td>1.401.982 filas, 166 MB · ≈190/día.</td><td>Transacción en línea desde la app.</td><td>76.248 reseñas con rating 0 (5,4 %), que tratamos como «sin nota». El texto es no estructurado (útil para GenAI en la E3).</td><td><b>On-write</b>.</td></tr>
+</table>
+<p>Usamos <b>schema-on-read</b> para lo que llega del reloj: los dos modelos nombran distinto los mismos campos y es probable que un firmware nuevo agregue otros. Guardamos el lote original y lo interpretamos al limpiarlo; así podemos reprocesar si cambia una regla. Lo que nace en la app (comidas, reseñas, vinculaciones) entra con <b>schema-on-write</b>, porque ahí la base debe rechazar en el momento un dato inválido, como una receta inexistente. Si la app operara con el 10 % de los 271.907 usuarios de Food.com con reloj, las mediciones serían ≈23 M de filas/día (≈5 GB gz al mes).</p>
+
+<h2>3. Estructura de los datos</h2>
+<h3>a) Nivel operacional (OLTP) — diagrama entidad-relación en el Anexo A</h3>
+<table>
+  <tr><th style="width:17%">Entidad (PK · FK)</th><th style="width:13%">Modelo</th><th>Por qué ese modelo acompaña el acceso</th></tr>
+  <tr><td>usuario (AuthorId) · receta (RecipeId · autor) · reseña (ReviewId · AuthorId, RecipeId) · comida (comida_id · AuthorId, RecipeId) · dispositivo (device_id) · vinculación (vinculacion_id · device_id, AuthorId) · sesión (session_id · device_id)</td><td><span class="tag t-rel">Relacional</span></td><td>Son entidades con relaciones y reglas que deben cumplirse siempre: una comida o reseña apunta a una receta que existe, y un reloj pertenece a un solo usuario a la vez. Se consultan por clave con escrituras pequeñas y concurrentes, el caso típico de una base relacional con transacciones ACID. Ingredientes y palabras clave de la receta van como JSON dentro de la fila: se leen junto con la receta y no se filtran por ellos en la operación.</td></tr>
+  <tr><td>medición (device_id + ts_medicion)</td><td><span class="tag t-ts">Series temporales</span></td><td>Es un flujo de escrituras de solo agregar, que se lee por dispositivo y rango de tiempo («últimas 24 h de este reloj»). La clave compuesta permite insertar de forma idempotente (los reintentos no duplican). Solo se retienen 30 días; la historia completa vive en el nivel analítico.</td></tr>
+  <tr><td>recomendación (<span class="mono">reco:{AuthorId}:{fecha}</span>)</td><td><span class="tag t-kv">Clave-valor</span></td><td>La app la lee entera por una clave conocida y con alta concurrencia (pico entre 18 y 21 h). No necesita joins ni historia operacional.</td></tr>
+</table>
+<p><b>Regla de integridad transaccional.</b> Un usuario tiene como máximo un reloj activo y un reloj está vinculado a un solo usuario a la vez. Se implementa con dos índices únicos parciales sobre <span class="mono">vinculación</span> (<span class="mono">WHERE fecha_desvinculacion IS NULL</span>). Vincular un reloj nuevo cierra la vinculación anterior y abre la nueva en una sola transacción (consulta T1). Además: una sola reseña por usuario y receta (<span class="mono">UNIQUE(AuthorId, RecipeId)</span>), <span class="mono">porciones</span> entre 1 y 20, y <span class="mono">fin &gt; inicio</span> en sesiones.</p>
+
+<h3>b) Nivel analítico (OLAP) — modelo estrella en el Anexo B</h3>
+<p><b>Tabla de hechos principal: <span class="mono">fact_balance_diario</span>, con una fila por usuario y día local.</b> Medidas: kcal gastadas según el reloj, pasos, minutos activos, número de sesiones y kcal de sesiones, kcal y proteína consumidas, número de comidas, balance (gasto − consumo), cobertura (% de minutos con datos) y <span class="mono">ts_ultimo_dato</span>. Claves: <span class="mono">usuario_key, fecha_key, dispositivo_key, actividad_key</span> (actividad principal del día). Una segunda tabla de hechos, <span class="mono">fact_comida</span> (una fila por comida registrada: porciones, kcal y proteína, con claves a usuario, fecha y receta), permite estudiar qué se cocina después de cada actividad. <b>Dimensiones:</b> <span class="mono">dim_fecha</span> (fecha, día de semana, fin de semana, mes, año), <span class="mono">dim_usuario</span> (zona horaria, número de reseñas, nota media otorgada, fecha de vinculación), <span class="mono">dim_dispositivo</span> (modelo, frecuencia de muestreo, vigencia), <span class="mono">dim_receta</span> (categoría, kcal y proteína por porción, tiempo total en minutos, rating agregado, número de reseñas) y <span class="mono">dim_tipo_actividad</span> (tipo, intensidad MET, usa distancia).</p>
+<p><b>Ubicación y formato: Lakehouse sobre almacenamiento de objetos.</b> La capa cruda (bronce) guarda los lotes del reloj y las extracciones de la app <i>tal como llegan</i> (JSONL.gz y CSV), particionados por fecha y hora de recepción. La capa limpia (plata) y la analítica (oro) son tablas <b>Delta</b> sobre <b>Parquet</b>. Elegimos Lakehouse y no Warehouse porque los datos del reloj son semiestructurados y llegan tarde. Necesitamos conservar los originales para reprocesar, y aplicar <span class="mono">MERGE</span> transaccional para incorporar atrasados sin duplicar; las versiones de Delta nos permitirán reproducir el dataset de la E3. Con ≈0,5 GB comprimidos, un Warehouse dedicado agregaría costo y una copia más sin resolver un problema que hoy tengamos.</p>
+<p><b>Organización física.</b> Columnar en plata y oro: las consultas analíticas leen 3 o 4 columnas (device_id, ts, kcal, pasos) de millones de filas y Parquet comprime bien los valores repetidos. Las mediciones de plata se <b>particionan por fecha de medición</b> (día UTC) y se ordenan por <span class="mono">device_id</span> dentro de cada partición. Así, las consultas por rango de fechas podan particiones, y un lote atrasado solo reescribe los días que toca (ventana de reprocesamiento de 5 días, porque el máximo atraso observado es 108 h). No particionamos por dispositivo: 315 relojes generarían miles de archivos pequeños. <span class="mono">fact_balance_diario</span> es chica (≈110 mil filas/año) y basta con particionarla por mes.</p>
+
+<h2>4. Consultas de ejemplo (detalle completo en el Anexo D)</h2>
+<table>
+  <tr><th style="width:4%">ID</th><th style="width:27%">Propósito · quién la ejecuta</th><th style="width:7%">Clase</th><th style="width:33%">Justificación (registros, lee/escribe, frecuencia, latencia, concurrencia)</th><th>Qué la haría rápida</th></tr>
+  <tr><td class="k">T1</td><td>Vincular un reloj nuevo, cerrando el anterior · app</td><td>OLTP</td><td>Escribe 2 o 3 filas en una transacción. Decenas por día, &lt; 100 ms; poca concurrencia, pero los conflictos son críticos.</td><td>Índices únicos parciales por AuthorId y device_id</td></tr>
+  <tr><td class="k">T2</td><td>Registrar una comida · app</td><td>OLTP</td><td>Escribe 1 fila y valida la FK. ≈360/día hoy, &lt; 200 ms. Clave de idempotencia ante reintentos.</td><td>PK; índice (AuthorId, fecha_hora)</td></tr>
+  <tr><td class="k">T3</td><td>Mostrar «Tu cena de hoy» · app</td><td>OLTP</td><td>Lee 1 clave y 5 recetas por PK. Cada apertura de la app; &lt; 50 ms; alta concurrencia en el pico de la tarde.</td><td>Caché clave-valor precalculada; PK de receta</td></tr>
+  <tr><td class="k">A1</td><td><b>Presupuesto de la cena y recetas candidatas por usuario</b> · servicio de recomendación (batch 17:30)</td><td>OLAP</td><td>Lee ≈17 mil filas del hecho (300 usuarios × 56 días) y filtra 522 mil recetas. Una vez al día; minutos aceptables. <b>Responde el objetivo.</b></td><td>Columnar; resumen diario precalculado; filtro previo de recetas por kcal y rating</td></tr>
+  <tr><td class="k">A2</td><td>Qué categorías de recetas se cocinan en la tarde según la actividad del día · analista de producto</td><td>OLAP</td><td>Junta los dos hechos (≈33 mil comidas en 90 días) con 3 dimensiones. Semanal; segundos.</td><td>Columnar; partición por mes; dimensiones pequeñas</td></tr>
+  <tr><td class="k">A3</td><td>Atraso de sincronización, repetidos y FC nula por modelo (para fijar la hora de corte) · ingeniería de datos</td><td>OLAP</td><td>Recorre ≈7,7 M mediciones de 30 días, 4 columnas. Semanal; segundos o minutos.</td><td>Poda por fecha; Parquet lee solo 4 columnas</td></tr>
+  <tr><td class="k">F1</td><td>«Llevas X kcal hoy», en vivo en la app y como insumo del recomendador · app</td><td>Frontera</td><td>Agrega cientos a miles de mediciones (analítico), pero para un usuario, &lt; 200 ms y con miles de lecturas simultáneas (operacional).</td><td>Agregado incremental por (reloj, día), mantenido por la ingesta</td></tr>
+</table>
+<p><b>T1 sin transacción:</b> si el sistema cierra la vinculación anterior y falla al crear la nueva, el usuario queda sin reloj y sus mediciones no se atribuyen a nadie. Si dos solicitudes vinculan el mismo reloj al mismo tiempo, dos usuarios lo tendrían activo y las kcal de uno se sumarían al otro. <span class="mono">BEGIN … COMMIT</span>, con bloqueo de las filas involucradas, garantiza que ocurra todo o nada. <b>F1 (frontera):</b> calcularla escaneando el Lakehouse sería lento, y hacerlo sobre la base operacional competiría con las transacciones. La tratamos como lectura OLTP de un <b>resumen precalculado</b>: al insertar cada lote en la base de series temporales (con <span class="mono">ON CONFLICT DO NOTHING</span> para ignorar repetidos), la ingesta suma las kcal nuevas al contador <span class="mono">kcal_hoy[reloj, día local]</span>. La app solo lee esa fila. El cálculo sigue siendo analítico, pero incremental, y vive fuera de la base transaccional y del Lakehouse.</p>
+
+<h2>5. Arquitectura inicial (diagrama en el Anexo C)</h2>
+<p>Fuentes (app, relojes vía teléfono, catálogo) → recepción (API transaccional, endpoint de ingesta de lotes con cola, carga batch) → almacenamiento operacional (base relacional, base de series temporales con el agregado del día, caché clave-valor) y analítico (Lakehouse bronce → plata → oro en almacenamiento de objetos, alimentado por extracción incremental horaria y por la copia cruda de los lotes) → procesamiento (motor batch y micro-batch horario: unificar, deduplicar, <span class="mono">MERGE</span> de atrasados) → consumo (servicio de recomendación que escribe la caché, dashboard de producto, notebooks de DS/ML). Las decisiones y sus alternativas están en <span class="mono">decisiones.md</span>.</p>
+
+<!-- ======================= ANEXOS ======================= -->
+<section class="anexo">
+<h2>Anexo A · Diagrama entidad-relación (nivel operacional)</h2>
+<svg viewBox="0 0 1000 470" xmlns="http://www.w3.org/2000/svg" font-size="12">
+  <defs>
+    <style>
+      .bx{fill:#fff;stroke:#5b6670;stroke-width:1.2}
+      .hd-rel{fill:#1f5f8b}.hd-ts{fill:#2f7d4f}.hd-kv{fill:#b5651d}
+      .ht{fill:#fff;font-weight:700;font-size:12.5px}
+      .at{fill:#1d2329;font-size:11.5px}
+      .pk{fill:#1f5f8b;font-weight:700;font-size:11.5px}
+      .rl{stroke:#5b6670;stroke-width:1.3;fill:none}
+      .cd{fill:#1d2329;font-size:12px;font-weight:700}
+      .lb{fill:#5b6670;font-size:11px;font-style:italic}
+    </style>
+  </defs>
+  <!-- relaciones (debajo de las cajas) -->
+  <line class="rl" x1="310" y1="70" x2="250" y2="70"/>
+  <text class="cd" x="296" y="64">1</text><text class="cd" x="254" y="64">N</text>
+  <line class="rl" x1="110" y1="190" x2="110" y2="152"/>
+  <text class="cd" x="115" y="186">1</text><text class="cd" x="115" y="166">N</text>
+  <line class="rl" x1="80" y1="272" x2="80" y2="320"/>
+  <text class="cd" x="85" y="286">1</text><text class="cd" x="85" y="316">N</text>
+  <line class="rl" x1="180" y1="272" x2="300" y2="320"/>
+  <text class="cd" x="186" y="288">1</text><text class="cd" x="282" y="316">N</text>
+  <line class="rl" x1="490" y1="60" x2="760" y2="60"/>
+  <text class="cd" x="496" y="54">1</text><text class="cd" x="746" y="54">N</text>
+  <text class="lb" x="590" y="54">publica (autor)</text>
+  <line class="rl" x1="450" y1="122" x2="560" y2="205"/>
+  <text class="cd" x="456" y="140">1</text><text class="cd" x="544" y="200">N</text>
+  <line class="rl" x1="410" y1="122" x2="560" y2="350"/>
+  <text class="cd" x="402" y="140">1</text><text class="cd" x="544" y="340">N</text>
+  <line class="rl" x1="840" y1="172" x2="760" y2="205"/>
+  <text class="cd" x="828" y="190">1</text><text class="cd" x="764" y="203">N</text>
+  <line class="rl" x1="900" y1="172" x2="760" y2="350"/>
+  <text class="cd" x="890" y="190">1</text><text class="cd" x="764" y="343">N</text>
+  <line class="rl" x1="370" y1="122" x2="370" y2="380" stroke-dasharray="5 4"/>
+  <text class="lb" x="376" y="300">referencia lógica</text>
+  <!-- vinculacion -->
+  <rect class="bx" x="20" y="20" width="230" height="132"/><rect class="hd-rel" x="20" y="20" width="230" height="22"/>
+  <text class="ht" x="28" y="36">VINCULACIÓN</text><text class="ht" x="186" y="36" font-size="10">relacional</text>
+  <text class="pk" x="28" y="58">PK vinculacion_id</text>
+  <text class="at" x="28" y="74">FK device_id · FK AuthorId</text>
+  <text class="at" x="28" y="90">fecha_vinculacion</text>
+  <text class="at" x="28" y="106">fecha_desvinculacion (NULL = activa)</text>
+  <text class="at" x="28" y="124" fill="#b5651d" font-weight="700">ÚNICO activo por AuthorId</text>
+  <text class="at" x="28" y="140" fill="#b5651d" font-weight="700">ÚNICO activo por device_id</text>
+
+  <!-- dispositivo -->
+  <rect class="bx" x="20" y="190" width="210" height="82"/><rect class="hd-rel" x="20" y="190" width="210" height="22"/>
+  <text class="ht" x="28" y="206">DISPOSITIVO</text><text class="ht" x="166" y="206" font-size="10">relacional</text>
+  <text class="pk" x="28" y="228">PK device_id</text>
+  <text class="at" x="28" y="244">modelo (Pulso S | FitBand 2)</text>
+  <text class="at" x="28" y="260">frecuencia_muestreo</text>
+
+  <!-- usuario -->
+  <rect class="bx" x="310" y="20" width="180" height="102"/><rect class="hd-rel" x="310" y="20" width="180" height="22"/>
+  <text class="ht" x="318" y="36">USUARIO</text><text class="ht" x="426" y="36" font-size="10">relacional</text>
+  <text class="pk" x="318" y="58">PK AuthorId</text>
+  <text class="at" x="318" y="74">nombre</text>
+  <text class="at" x="318" y="90">zona_horaria</text>
+  <text class="at" x="318" y="106">fecha_registro</text>
+
+  <!-- receta -->
+  <rect class="bx" x="760" y="20" width="220" height="152"/><rect class="hd-rel" x="760" y="20" width="220" height="22"/>
+  <text class="ht" x="768" y="36">RECETA</text><text class="ht" x="886" y="36" font-size="10">relacional+JSON</text>
+  <text class="pk" x="768" y="58">PK RecipeId</text>
+  <text class="at" x="768" y="74">FK autor_id → USUARIO</text>
+  <text class="at" x="768" y="90">nombre · categoria</text>
+  <text class="at" x="768" y="106">kcal_porcion · proteina_g · …</text>
+  <text class="at" x="768" y="122">porciones · tiempo_total_min</text>
+  <text class="at" x="768" y="138">ingredientes, keywords (JSON)</text>
+  <text class="at" x="768" y="154">fecha_publicacion</text>
+
+  <!-- resena -->
+  <rect class="bx" x="560" y="190" width="200" height="117"/><rect class="hd-rel" x="560" y="190" width="200" height="22"/>
+  <text class="ht" x="568" y="206">RESEÑA</text><text class="ht" x="696" y="206" font-size="10">relacional</text>
+  <text class="pk" x="568" y="228">PK ReviewId</text>
+  <text class="at" x="568" y="244">FK AuthorId · FK RecipeId</text>
+  <text class="at" x="568" y="260">rating (0–5) · texto</text>
+  <text class="at" x="568" y="276">fecha_envio · fecha_modif</text>
+  <text class="at" x="568" y="294" fill="#b5651d" font-weight="700">UNIQUE(AuthorId, RecipeId)</text>
+
+  <!-- comida -->
+  <rect class="bx" x="560" y="335" width="200" height="102"/><rect class="hd-rel" x="560" y="335" width="200" height="22"/>
+  <text class="ht" x="568" y="351">COMIDA</text><text class="ht" x="696" y="351" font-size="10">relacional</text>
+  <text class="pk" x="568" y="373">PK comida_id</text>
+  <text class="at" x="568" y="389">FK AuthorId · FK RecipeId</text>
+  <text class="at" x="568" y="405">fecha_hora (UTC)</text>
+  <text class="at" x="568" y="421">porciones CHECK 1–20</text>
+
+  <!-- sesion -->
+  <rect class="bx" x="20" y="320" width="170" height="102"/><rect class="hd-rel" x="20" y="320" width="170" height="22"/>
+  <text class="ht" x="28" y="336">SESIÓN</text><text class="ht" x="126" y="336" font-size="10">relacional</text>
+  <text class="pk" x="28" y="358">PK session_id</text>
+  <text class="at" x="28" y="374">FK device_id · tipo</text>
+  <text class="at" x="28" y="390">inicio · fin (fin &gt; inicio)</text>
+  <text class="at" x="28" y="406">distancia_km · kcal</text>
+
+  <!-- medicion -->
+  <rect class="bx" x="210" y="320" width="150" height="102"/><rect class="hd-ts" x="210" y="320" width="150" height="22"/>
+  <text class="ht" x="218" y="336">MEDICIÓN</text><text class="ht" x="290" y="336" font-size="10">series temp.</text>
+  <text class="pk" x="218" y="358">PK (device_id,</text>
+  <text class="pk" x="218" y="372">     ts_medicion)</text>
+  <text class="at" x="218" y="390">ts_recepcion</text>
+  <text class="at" x="218" y="406">fc · pasos · kcal</text>
+
+  <!-- recomendacion -->
+  <rect class="bx" x="380" y="380" width="170" height="72"/><rect class="hd-kv" x="380" y="380" width="170" height="22"/>
+  <text class="ht" x="388" y="396">RECOMENDACIÓN</text><text class="ht" x="546" y="396" font-size="10" text-anchor="end">clave-valor</text>
+  <text class="at" x="388" y="418">key reco:{AuthorId}:{fecha}</text>
+  <text class="at" x="388" y="434">value [5 RecipeId, meta_kcal,</text>
+  <text class="at" x="388" y="448">       datos_hasta]</text>
+</svg>
+<p class="nota">Las mediciones y sesiones se asocian al reloj, no al usuario. El dueño se obtiene de VINCULACIÓN según el intervalo de vigencia, porque un usuario puede cambiar de reloj. En el Lakehouse se conserva la historia completa de cada entidad.</p>
+
+<h2>Anexo B · Modelo estrella (nivel analítico)</h2>
+<svg viewBox="0 0 1000 440" xmlns="http://www.w3.org/2000/svg" font-size="12">
+  <defs>
+    <style>
+      .bx{fill:#fff;stroke:#5b6670;stroke-width:1.2}
+      .hf{fill:#1d2329}.hdim{fill:#5b6670}
+      .ht{fill:#fff;font-weight:700;font-size:12.5px}
+      .at{fill:#1d2329;font-size:11.5px}
+      .pk{fill:#1f5f8b;font-weight:700;font-size:11.5px}
+      .gr{fill:#b5651d;font-weight:700;font-size:11.5px}
+      .rl{stroke:#5b6670;stroke-width:1.3;fill:none}
+    </style>
+  </defs>
+  <line class="rl" x1="430" y1="160" x2="430" y2="122"/>
+  <line class="rl" x1="300" y1="215" x2="220" y2="215"/>
+  <line class="rl" x1="300" y1="360" x2="220" y2="360"/>
+  <line class="rl" x1="560" y1="380" x2="610" y2="380"/>
+  <line class="rl" x1="610" y1="200" x2="550" y2="80"/>
+  <line class="rl" x1="810" y1="210" x2="830" y2="210"/>
+
+  <!-- dim_usuario -->
+  <rect class="bx" x="320" y="10" width="230" height="112"/><rect class="hdim" x="320" y="10" width="230" height="22"/>
+  <text class="ht" x="328" y="26">DIM_USUARIO</text>
+  <text class="pk" x="328" y="48">usuario_key · AuthorId</text>
+  <text class="at" x="328" y="64">zona_horaria</text>
+  <text class="at" x="328" y="80">n_resenas · rating_medio_otorgado</text>
+  <text class="at" x="328" y="96">fecha_primera_vinculacion</text>
+  <text class="at" x="328" y="112">segmento_actividad</text>
+
+  <!-- dim_fecha -->
+  <rect class="bx" x="20" y="150" width="200" height="112"/><rect class="hdim" x="20" y="150" width="200" height="22"/>
+  <text class="ht" x="28" y="166">DIM_FECHA</text>
+  <text class="pk" x="28" y="188">fecha_key · fecha</text>
+  <text class="at" x="28" y="204">dia_semana · es_fin_semana</text>
+  <text class="at" x="28" y="220">semana · mes · año</text>
+  <text class="at" x="28" y="236">es_feriado</text>
+  <text class="at" x="28" y="252" font-style="italic" fill="#5b6670">(compartida por ambos hechos)</text>
+
+  <!-- fact_balance -->
+  <rect class="bx" x="300" y="160" width="260" height="262" stroke="#1d2329" stroke-width="2"/><rect class="hf" x="300" y="160" width="260" height="22"/>
+  <text class="ht" x="308" y="176">FACT_BALANCE_DIARIO</text>
+  <text class="gr" x="308" y="198">Grano: 1 fila por usuario × día local</text>
+  <text class="pk" x="308" y="216">usuario_key · fecha_key</text>
+  <text class="pk" x="308" y="232">dispositivo_key · actividad_key</text>
+  <text class="at" x="308" y="252">kcal_gastadas_reloj · pasos</text>
+  <text class="at" x="308" y="268">min_activos · n_sesiones</text>
+  <text class="at" x="308" y="284">kcal_sesiones · km_sesiones</text>
+  <text class="at" x="308" y="300">kcal_consumidas · proteina_g</text>
+  <text class="at" x="308" y="316">n_comidas</text>
+  <text class="at" x="308" y="332">balance_kcal = gasto − consumo</text>
+  <text class="at" x="308" y="348">cobertura_pct (min con dato / 1440)</text>
+  <text class="at" x="308" y="364">ts_ultimo_dato</text>
+  <text class="at" x="308" y="384" font-style="italic" fill="#5b6670">Partición: mes. Se recalcula el día</text>
+  <text class="at" x="308" y="400" font-style="italic" fill="#5b6670">cuando llegan datos atrasados (MERGE).</text>
+
+  <!-- dim_dispositivo -->
+  <rect class="bx" x="20" y="300" width="200" height="96"/><rect class="hdim" x="20" y="300" width="200" height="22"/>
+  <text class="ht" x="28" y="316">DIM_DISPOSITIVO</text>
+  <text class="pk" x="28" y="338">dispositivo_key · device_id</text>
+  <text class="at" x="28" y="354">modelo · frec_muestreo_min</text>
+  <text class="at" x="28" y="370">vigente_desde · vigente_hasta</text>
+  <text class="at" x="28" y="386">AuthorId (SCD tipo 2)</text>
+
+  <!-- dim_tipo_actividad -->
+  <rect class="bx" x="610" y="340" width="190" height="82"/><rect class="hdim" x="610" y="340" width="190" height="22"/>
+  <text class="ht" x="618" y="356">DIM_TIPO_ACTIVIDAD</text>
+  <text class="pk" x="618" y="378">actividad_key · tipo</text>
+  <text class="at" x="618" y="394">intensidad_met</text>
+  <text class="at" x="618" y="410">usa_distancia · ninguna</text>
+
+  <!-- fact_comida -->
+  <rect class="bx" x="610" y="150" width="200" height="150" stroke="#1d2329" stroke-width="2"/><rect class="hf" x="610" y="150" width="200" height="22"/>
+  <text class="ht" x="618" y="166">FACT_COMIDA</text>
+  <text class="gr" x="618" y="188">Grano: 1 fila por comida</text>
+  <text class="pk" x="618" y="206">usuario_key · fecha_key</text>
+  <text class="pk" x="618" y="222">receta_key · hora_local</text>
+  <text class="at" x="618" y="242">porciones</text>
+  <text class="at" x="618" y="258">kcal = porciones × kcal_porcion</text>
+  <text class="at" x="618" y="274">proteina_g</text>
+  <text class="at" x="618" y="290">fue_recomendada (E3)</text>
+
+  <!-- dim_receta -->
+  <rect class="bx" x="830" y="120" width="160" height="176"/><rect class="hdim" x="830" y="120" width="160" height="22"/>
+  <text class="ht" x="838" y="136">DIM_RECETA</text>
+  <text class="pk" x="838" y="158">receta_key · RecipeId</text>
+  <text class="at" x="838" y="174">nombre · categoria</text>
+  <text class="at" x="838" y="190">kcal_porcion</text>
+  <text class="at" x="838" y="206">proteina_g · carbos_g</text>
+  <text class="at" x="838" y="222">tiempo_total_min</text>
+  <text class="at" x="838" y="238">rating_agregado</text>
+  <text class="at" x="838" y="254">n_resenas</text>
+  <text class="at" x="838" y="270">segmento_kcal</text>
+  <text class="at" x="838" y="286">alta_proteina (bool)</text>
+</svg>
+<p class="nota">DIM_FECHA y DIM_USUARIO son dimensiones conformadas que comparten ambos hechos; A2 cruza los hechos por (usuario_key, fecha_key). Las kcal de sesiones se guardan como medida aparte y no se suman al gasto del reloj, porque las mediciones de 10 s durante la sesión ya las incluyen.</p>
+</section>
+
+<section class="anexo">
+<h2>Anexo C · Arquitectura inicial (capacidades, sin productos)</h2>
+<svg viewBox="0 0 1000 410" xmlns="http://www.w3.org/2000/svg" font-size="12">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6670"/></marker>
+    <style>
+      .b{fill:#fff;stroke:#5b6670;stroke-width:1.2;rx:6}
+      .src{fill:#eef3f7}.op{fill:#e8f0f7}.lh{fill:#eef6f0}.cons{fill:#fbf2e9}
+      .t{fill:#1d2329;font-size:12px;font-weight:700}
+      .s{fill:#5b6670;font-size:10.5px}
+      .col{fill:#1f5f8b;font-size:12px;font-weight:700}
+      .a{stroke:#5b6670;stroke-width:1.4;fill:none;marker-end:url(#ar)}
+      .al{fill:#5b6670;font-size:10px;font-style:italic}
+    </style>
+  </defs>
+  <text class="col" x="10" y="14">Fuentes</text>
+  <text class="col" x="200" y="14">Recepción</text>
+  <text class="col" x="400" y="14">Almacenamiento</text>
+  <text class="col" x="690" y="14">Procesamiento</text>
+  <text class="col" x="860" y="14">Consumo</text>
+
+  <rect class="b src" x="10" y="30" width="160" height="64"/>
+  <text class="t" x="18" y="50">App móvil</text>
+  <text class="s" x="18" y="66">usuarios, comidas, reseñas,</text><text class="s" x="18" y="80">vinculación de relojes</text>
+  <rect class="b src" x="10" y="170" width="160" height="64"/>
+  <text class="t" x="18" y="190">Relojes (vía teléfono)</text>
+  <text class="s" x="18" y="206">mediciones y sesiones,</text><text class="s" x="18" y="220">en lotes al sincronizar</text>
+  <rect class="b src" x="10" y="320" width="160" height="52"/>
+  <text class="t" x="18" y="340">Catálogo Food.com</text>
+  <text class="s" x="18" y="356">recetas (batch diario)</text>
+
+  <rect class="b" x="200" y="30" width="170" height="64"/>
+  <text class="t" x="208" y="50">API transaccional</text>
+  <text class="s" x="208" y="66">escrituras en línea,</text><text class="s" x="208" y="80">validación inmediata</text>
+  <rect class="b" x="200" y="170" width="170" height="64"/>
+  <text class="t" x="208" y="190">Ingesta de lotes + cola</text>
+  <text class="s" x="208" y="206">entrega al menos una vez;</text><text class="s" x="208" y="220">guarda el lote crudo</text>
+  <rect class="b" x="200" y="320" width="170" height="52"/>
+  <text class="t" x="208" y="340">Carga batch</text>
+  <text class="s" x="208" y="356">archivo diario del catálogo</text>
+
+  <rect class="b op" x="400" y="25" width="250" height="56"/>
+  <text class="t" x="408" y="45">Base relacional (OLTP)</text>
+  <text class="s" x="408" y="61">usuarios, recetas, reseñas, comidas,</text><text class="s" x="408" y="74">vinculaciones, sesiones</text>
+  <rect class="b op" x="400" y="95" width="215" height="56"/>
+  <text class="t" x="408" y="115">Base de series temporales</text>
+  <text class="s" x="408" y="131">mediciones de 30 días +</text><text class="s" x="408" y="144">agregado kcal_hoy (F1)</text>
+
+  <rect class="b lh" x="400" y="190" width="250" height="200"/>
+  <text class="t" x="408" y="208">Lakehouse en almacenamiento de objetos</text>
+  <rect class="b" x="415" y="218" width="220" height="48"/>
+  <text class="t" x="423" y="236">Bronce · crudo</text><text class="s" x="423" y="252">JSONL.gz / CSV por fecha-hora de recepción</text>
+  <rect class="b" x="415" y="275" width="220" height="48"/>
+  <text class="t" x="423" y="293">Plata · limpio</text><text class="s" x="423" y="309">Delta/Parquet, por fecha de medición</text>
+  <rect class="b" x="415" y="332" width="220" height="48"/>
+  <text class="t" x="423" y="350">Oro · modelo estrella</text><text class="s" x="423" y="366">hechos y dimensiones (Delta)</text>
+
+  <rect class="b" x="690" y="240" width="150" height="66"/>
+  <text class="t" x="698" y="260">Motor batch /</text><text class="t" x="698" y="274">micro-batch horario</text>
+  <text class="s" x="698" y="290">unificar, deduplicar,</text><text class="s" x="698" y="302">MERGE de atrasados</text>
+  <rect class="b" x="690" y="140" width="150" height="56"/>
+  <text class="t" x="698" y="160">Servicio de</text><text class="t" x="698" y="174">recomendación</text>
+  <text class="s" x="698" y="190">batch 17:30 hora local</text>
+  <rect class="b op" x="690" y="55" width="150" height="50"/>
+  <text class="t" x="698" y="75">Caché clave-valor</text>
+  <text class="s" x="698" y="92">reco del día por usuario</text>
+
+  <rect class="b cons" x="860" y="50" width="130" height="62"/>
+  <text class="t" x="868" y="70">App:</text><text class="t" x="868" y="84">«Tu cena de hoy»</text><text class="s" x="868" y="100">y «llevas X kcal»</text>
+  <rect class="b cons" x="690" y="330" width="140" height="42"/>
+  <text class="t" x="698" y="348">Dashboard</text><text class="s" x="698" y="363">equipo de producto</text>
+  <rect class="b cons" x="850" y="330" width="140" height="42"/>
+  <text class="t" x="858" y="348">Notebooks DS/ML</text><text class="s" x="858" y="363">dataset y modelo (E3)</text>
+
+  <path class="a" d="M170,62 L200,62"/>
+  <path class="a" d="M370,55 L400,53"/>
+  <path class="a" d="M170,202 L200,202"/>
+  <path class="a" d="M370,190 L400,130"/>
+  <path class="a" d="M370,216 L415,240"/>
+  <path class="a" d="M170,346 L200,346"/>
+  <path class="a" d="M370,346 L388,346 L388,248 L415,248"/>
+  <path class="a" d="M640,81 L640,212"/>
+  <text class="al" x="580" y="176" transform="rotate(-90 646 150)">extracción horaria</text>
+  <path class="a" d="M635,242 L690,262"/>
+  <path class="a" d="M690,285 L635,299"/>
+  <path class="a" d="M690,298 L635,352"/>
+  <path class="a" d="M765,240 L765,196"/>
+  <text class="al" x="770" y="222">lee oro</text>
+  <path class="a" d="M615,128 L690,160"/>
+  <text class="al" x="648" y="128">kcal_hoy</text>
+  <path class="a" d="M765,140 L765,105"/>
+  <path class="a" d="M840,80 L860,80"/>
+  <path class="a" d="M650,370 L690,355"/>
+  <path class="a" d="M650,384 L920,384 L920,372"/>
+</svg>
+<p class="nota">Rutas: la app escribe en la base relacional. Los lotes del reloj van a la base de series temporales (camino rápido, alimenta F1) y, sin modificar, a bronce (camino de análisis). Los cambios de la base relacional se copian cada hora a bronce. El motor transforma bronce → plata → oro y reprocesa los últimos 5 días cuando llegan atrasados. El servicio de recomendación lee oro y kcal_hoy y escribe la caché que lee la app. Ninguna consulta analítica corre sobre la base operacional.</p>
+
+<h2>Anexo D · Consultas completas</h2>
+
+<div class="q">
+<h3>T1 · Vincular un reloj nuevo (OLTP, escribe, transacción)</h3>
+<div class="fila"><b>Propósito y usuario:</b> la app empareja un reloj y deja un único reloj activo por usuario y un único usuario por reloj.</div>
+<pre>BEGIN;
+  -- bloquea las vinculaciones activas del usuario y del reloj (evita carreras)
+  SELECT vinculacion_id FROM vinculacion
+   WHERE (AuthorId = :uid OR device_id = :dev) AND fecha_desvinculacion IS NULL
+   FOR UPDATE;
+  UPDATE vinculacion SET fecha_desvinculacion = now()
+   WHERE (AuthorId = :uid OR device_id = :dev) AND fecha_desvinculacion IS NULL;
+  INSERT INTO dispositivo (device_id, modelo) VALUES (:dev, :modelo)
+    ON CONFLICT (device_id) DO NOTHING;
+  INSERT INTO vinculacion (device_id, AuthorId, fecha_vinculacion) VALUES (:dev, :uid, now());
+COMMIT;   -- ante cualquier error: ROLLBACK y no cambia nada</pre>
+<div class="fila"><b>Justificación:</b> toca 2 o 3 filas, lee y escribe. Ocurre decenas de veces al día con latencia &lt; 100 ms. La concurrencia es baja, pero los conflictos (dos vinculaciones del mismo reloj) son críticos. Sin transacción, un fallo entre el UPDATE y el INSERT deja al usuario sin reloj, y dos solicitudes simultáneas dejan el reloj activo para dos usuarios. Los índices únicos parciales son la última barrera. <b>Qué la haría rápida:</b> esos mismos índices sobre AuthorId y device_id con <span class="mono">fecha_desvinculacion IS NULL</span>.</div>
+</div>
+
+<div class="q">
+<h3>T2 · Registrar una comida (OLTP, escribe)</h3>
+<div class="fila"><b>Propósito y usuario:</b> el usuario anota en la app que preparó una receta.</div>
+<pre>INSERT INTO comida (comida_id, AuthorId, RecipeId, fecha_hora, porciones)
+VALUES (:uuid_generado_en_el_telefono, :uid, :rid, :ts_utc, :porciones)
+ON CONFLICT (comida_id) DO NOTHING;   -- un reintento de red no duplica
+-- FK (RecipeId) rechaza recetas inexistentes; CHECK porciones BETWEEN 1 AND 20</pre>
+<div class="fila"><b>Justificación:</b> escribe 1 fila; ≈360/día hoy y alta concurrencia a la hora de cenar; &lt; 200 ms. Es un INSERT simple, pero las restricciones son las que evitan los 48 <span class="mono">RecipeId</span> huérfanos que vimos en el extracto. <b>Qué la haría rápida:</b> PK e índice (AuthorId, fecha_hora) para el historial del usuario.</div>
+</div>
+
+<div class="q">
+<h3>T3 · Mostrar «Tu cena de hoy» (OLTP, lee)</h3>
+<pre>GET reco:{:uid}:{:fecha_local}                -- caché clave-valor → [r1..r5], meta_kcal, datos_hasta
+SELECT RecipeId, nombre, kcal_porcion, proteina_g, tiempo_total_min, imagen_principal
+FROM receta WHERE RecipeId IN (:r1, :r2, :r3, :r4, :r5);</pre>
+<div class="fila"><b>Justificación:</b> lee 1 clave y 5 filas por PK. Se ejecuta en cada apertura de la app (pico entre 18 y 21 h), con &lt; 50 ms y alta concurrencia de lectura. <b>Qué la haría rápida:</b> caché precalculada; PK de receta. Si la clave no existe, se muestra la lista genérica más reciente.</div>
+</div>
+
+<div class="q">
+<h3>A1 · Presupuesto de la cena y recetas candidatas (OLAP, responde el objetivo)</h3>
+<div class="fila"><b>Propósito y usuario:</b> el servicio de recomendación, a las 17:30 de cada zona horaria, calcula cuántas kcal le quedan a cada usuario para la cena y elige cinco recetas.</div>
+<pre>WITH tipico AS (                       -- gasto y consumo típicos del mismo día de semana (8 semanas)
+  SELECT f.usuario_key, AVG(f.kcal_gastadas_reloj) AS gasto_tipico
+  FROM fact_balance_diario f JOIN dim_fecha d USING (fecha_key)
+  WHERE d.fecha BETWEEN :hoy - 56 AND :hoy - 1
+    AND d.dia_semana = :dia_semana_hoy AND f.cobertura_pct >= 80
+  GROUP BY f.usuario_key),
+hoy AS (                               -- consumo de hoy y actividad del día (desde oro, día en curso)
+  SELECT usuario_key, kcal_consumidas, actividad_key FROM fact_balance_diario
+  WHERE fecha_key = :hoy_key),
+presupuesto AS (
+  SELECT t.usuario_key, GREATEST(t.gasto_tipico - COALESCE(h.kcal_consumidas, 0), 300) AS kcal_cena,
+         a.tipo IN ('correr', 'fuerza') AS prioriza_proteina
+  FROM tipico t LEFT JOIN hoy h USING (usuario_key) LEFT JOIN dim_tipo_actividad a USING (actividad_key)),
+afinidad AS (                          -- categorías que el usuario cocinó en 90 días
+  SELECT fc.usuario_key, r.categoria, COUNT(*) AS veces
+  FROM fact_comida fc JOIN dim_receta r USING (receta_key)
+  WHERE fc.fecha_key >= :hoy_key - 90 GROUP BY 1, 2)
+SELECT usuario_key, RecipeId FROM (
+  SELECT p.usuario_key, r.RecipeId,
+         ROW_NUMBER() OVER (PARTITION BY p.usuario_key
+           ORDER BY COALESCE(af.veces, 0) DESC,
+                    CASE WHEN p.prioriza_proteina THEN r.proteina_g END DESC NULLS LAST,
+                    r.rating_agregado DESC) AS pos
+  FROM presupuesto p
+  JOIN dim_receta r ON r.kcal_porcion BETWEEN 0.85 * p.kcal_cena AND 1.15 * p.kcal_cena
+                   AND r.rating_agregado >= 4 AND r.n_resenas >= 5
+  LEFT JOIN afinidad af ON af.usuario_key = p.usuario_key AND af.categoria = r.categoria) x
+WHERE pos <= 5;                         -- resultado → caché reco:{AuthorId}:{fecha}</pre>
+<div class="fila"><b>Justificación:</b> lee ≈17 mil filas del hecho (300 usuarios × 56 días) y un subconjunto filtrado de 522 mil recetas. Solo lectura, una ejecución por zona horaria al día, minutos aceptables. No compite con la operación porque corre sobre oro. <b>Qué la haría rápida:</b> almacenamiento columnar, el resumen diario ya precalculado (no se recorren mediciones) y <span class="mono">dim_receta</span> filtrada de antemano a recetas con rating ≥ 4 y ≥ 5 reseñas.</div>
+</div>
+
+<div class="q">
+<h3>A2 · ¿Qué se cocina en la tarde según la actividad del día? (OLAP)</h3>
+<div class="fila"><b>Propósito y usuario:</b> el analista de producto ajusta las reglas del recomendador (por ejemplo, si de verdad se cocina más proteína después de correr).</div>
+<pre>SELECT a.tipo AS actividad_del_dia, r.categoria,
+       COUNT(*) AS comidas, AVG(fc.kcal) AS kcal_media, AVG(fc.proteina_g) AS proteina_media
+FROM fact_comida fc
+JOIN fact_balance_diario fb ON fb.usuario_key = fc.usuario_key AND fb.fecha_key = fc.fecha_key
+JOIN dim_tipo_actividad a ON a.actividad_key = fb.actividad_key
+JOIN dim_receta r ON r.receta_key = fc.receta_key
+JOIN dim_fecha d ON d.fecha_key = fc.fecha_key
+WHERE d.fecha >= :hoy - 90 AND fc.hora_local >= 17
+GROUP BY a.tipo, r.categoria
+ORDER BY a.tipo, comidas DESC;</pre>
+<div class="fila"><b>Justificación:</b> agrega ≈33 mil comidas de 90 días junto con dimensiones pequeñas. Solo lectura, semanal, segundos. <b>Qué la haría rápida:</b> columnar, partición mensual de los hechos (lee 3 o 4 meses) y dimensiones que caben en memoria.</div>
+</div>
+
+<div class="q">
+<h3>A3 · Calidad de la recepción por modelo (OLAP)</h3>
+<div class="fila"><b>Propósito y usuario:</b> ingeniería de datos decide la hora de corte del recomendador y la ventana de reprocesamiento.</div>
+<pre>SELECT modelo,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ts_recepcion - ts_medicion) AS atraso_p50,
+       PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY ts_recepcion - ts_medicion) AS atraso_p90,
+       AVG(CASE WHEN es_repetida THEN 1 ELSE 0 END) AS tasa_repetidas,
+       AVG(CASE WHEN fc IS NULL  THEN 1 ELSE 0 END) AS tasa_fc_nula
+FROM medicion_plata_auditoria      -- plata con marcas de calidad (repetidas marcadas, no borradas)
+WHERE fecha_medicion >= :hoy - 30  -- poda de particiones
+GROUP BY modelo;</pre>
+<div class="fila"><b>Justificación:</b> recorre ≈7,7 M de filas, pero solo 5 columnas. Solo lectura, semanal, segundos o minutos. <b>Qué la haría rápida:</b> poda por <span class="mono">fecha_medicion</span> y lectura columnar.</div>
+</div>
+
+<div class="q">
+<h3>F1 · «Llevas X kcal hoy» (consulta de frontera)</h3>
+<pre>-- (a) en la ingesta de cada lote, dentro de una transacción de la base de series temporales
+INSERT INTO medicion (device_id, ts_medicion, ts_recepcion, fc, pasos, kcal) VALUES (...lote...)
+  ON CONFLICT (device_id, ts_medicion) DO NOTHING
+  RETURNING kcal, pasos, ts_medicion;                 -- solo las filas realmente nuevas
+UPSERT kcal_hoy[device_id, fecha_local(ts_medicion)]
+  SET kcal += SUM(kcal nuevas), pasos += SUM(pasos nuevos), datos_hasta = MAX(ts_medicion);
+-- (b) lectura desde la app
+SELECT kcal, pasos, datos_hasta FROM kcal_hoy WHERE device_id = :dev AND fecha_local = :hoy;</pre>
+<div class="fila"><b>Discusión:</b> por lo que calcula (sumar cientos o miles de mediciones) parece OLAP; por cómo se usa (un usuario, &lt; 200 ms, miles de lecturas simultáneas y un valor que cambia durante el día) es OLTP. Descartamos ejecutarla sobre la base relacional, porque competiría con T1 y T2, y escanear el Lakehouse, porque tardaría segundos y tendría hasta una hora de desfase. La clasificamos como <b>lectura OLTP sobre un resumen que se mantiene de forma incremental</b>. El <span class="mono">ON CONFLICT</span> es clave: como el 2,2 % de las mediciones llega repetida, sin él el contador sumaría dos veces. La cifra es provisoria (los lotes pueden llegar horas después) y el valor definitivo del día lo fija <span class="mono">fact_balance_diario</span>.</div>
+</div>
+</section>
+
+<section class="anexo">
+<h2>Anexo E · Perfilamiento de los datos entregados</h2>
+<p>Las cifras del informe se obtuvieron con DuckDB sobre los archivos tal como se entregaron en Canvas, con el script <span class="mono">entregas/E1/anexos/perfilamiento.py</span>. Su salida completa está en <span class="mono">perfilamiento_salida.txt</span>. En esta entrega no se transforma ningún dato; la limpieza se implementa en la E2.</p>
+<table>
+  <tr><th>Fuente</th><th>Filas</th><th>Tamaño</th><th>Período</th><th>Hallazgos de calidad</th></tr>
+  <tr><td>mediciones (1.449 archivos)</td><td>15.540.132 (Pulso S 13.515.447 · FitBand 2 2.024.685)</td><td>114 MB gz</td><td>16-12-2007 a 14-02-2008</td><td>345.599 repetidas por (device_id, ts_medicion), todas con valores idénticos (45.584 idénticas incluso en ts_recepcion). FC nula: 270.869 Pulso S + 87.058 FitBand 2. 13 FC fuera de [30, 220]. Sin pasos ni kcal negativos. Atraso p50 80 min, p90 7,9 h, máx. 107,7 h. ≈99 filas por lote.</td></tr>
+  <tr><td>sesiones</td><td>4.840 (4.792 únicas)</td><td>764 KB</td><td>mismo</td><td>48 duplicadas idénticas. Caminar 1.827, correr 1.344, bicicleta 876, fuerza 793 (sin distancia). Duración media ≈48 min. Sin relojes desconocidos.</td></tr>
+  <tr><td>comidas</td><td>22.106</td><td>984 KB</td><td>mismo</td><td>300 usuarios, 20.702 recetas distintas. 48 RecipeId inexistentes. Porciones 1–4. 1.170 anteriores a la vinculación.</td></tr>
+  <tr><td>dispositivos</td><td>315</td><td>20 KB</td><td>—</td><td>198 Pulso S y 117 FitBand 2, de 300 usuarios. 15 desvinculados. Todos los AuthorId existen en reseñas. Zonas: New York 143, Chicago 78, Los Angeles 62, Denver 32.</td></tr>
+  <tr><td>recetas</td><td>522.517</td><td>171 MB</td><td>1999–2020</td><td>311 categorías. Mediana 317 kcal por porción; 2.615 con más de 5.000. 182.911 sin porciones. RecipeId en DOUBLE.</td></tr>
+  <tr><td>reseñas</td><td>1.401.982</td><td>166 MB</td><td>2000–2020</td><td>271.907 usuarios. Rating 5: 1.012.082; rating 0: 76.248. Ninguna editada. 44.108 reseñas son de usuarios con reloj.</td></tr>
+</table>
+</section>
+
+</body>
+</html>

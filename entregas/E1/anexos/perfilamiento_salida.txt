@@ -1,0 +1,38 @@
+
+## Recetas
+filas | categorias | kcal_porcion_gt_5000 | sin_porciones | tipo_recipeid
+522517 | 311 | 2615 | 182911 | DOUBLE
+
+## Reseñas
+filas | usuarios | rating_cero | desde | hasta
+1401982 | 271907 | 76248 | 2000-01-25 21:44:00+00 | 2020-12-28 03:23:48+00
+
+## Dispositivos
+modelo | relojes | usuarios | desvinculados | sin_resenas
+FitBand 2 | 117 | 115 | 6 | 0
+Pulso S | 198 | 192 | 9 | 0
+
+## Comidas
+filas | usuarios | ids_repetidos | receta_inexistente | min_porciones | max_porciones
+22106 | 300 | 0 | 48 | 1 | 4
+
+## Sesiones
+filas | sesiones_unicas | duplicadas_identicas | fuerza_sin_distancia
+4840 | 4792 | 48 | 793
+
+## Mediciones por formato
+formato | filas | fc_nula | fc_fuera_rango | desde | hasta
+Pulso S | 13515447 | 270869 | 13 | 2007-12-16 05:00:00 | 2008-02-14 07:59:00
+FitBand 2 | 2024685 | 87058 | 0 | 2007-12-16 05:00:00 | 2008-02-14 07:55:00
+
+## Mediciones repetidas
+repetidas_por_clave | repetidas_con_valores_distintos
+345599 | 0
+
+## Atraso de recepción (ts_recepcion - ts_medicion)
+p50_min | p90_min | max_horas | pct_mas_3h | pct_mas_24h
+80.46666666666667 | 472.01666666666665 | 107.67722222222223 | 25.34 | 2.58
+
+## Ritmo de llegada
+dias | filas_por_dia | lotes | filas_por_lote
+61 | 254756 | 156567 | 99

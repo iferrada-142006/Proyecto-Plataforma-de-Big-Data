@@ -1,0 +1,13 @@
+# Datos del curso: se descargan desde Canvas (ver datos/README.md)
+datos/*
+!datos/README.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+# Bases temporales
+*.duckdb
+*.duckdb.wal
